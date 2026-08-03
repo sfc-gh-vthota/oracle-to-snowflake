@@ -14,6 +14,7 @@ from .schema_converter import generate_schema_ddl
 from .full_load import full_load_all
 from .incremental import incremental_all
 from .streaming_load import stream_full_all, stream_incremental_all
+from .auto_mode import auto_load_all, auto_incremental_all
 from .checkpoint import Checkpoint
 
 console = Console()
@@ -167,6 +168,23 @@ def stream_incr(config, table):
     if table:
         cfg.tables = [t for t in cfg.tables if t.source_table.upper() == table.upper()]
     stream_incremental_all(cfg)
+
+
+@cli.command()
+@click.option("--config", "-c", required=True, type=click.Path(exists=True), help="Path to config YAML")
+@click.option("--mode", type=click.Choice(["full", "incremental"]), default="full", help="Sync mode")
+def sync(config, mode):
+    """Auto mode — picks streaming vs file-based per table.
+    
+    Tables <= 10M rows use streaming (fast, no disk).
+    Tables > 10M rows use file-based (resumable, chunked Parquet).
+    Incremental always uses streaming for timestamp CDC.
+    """
+    cfg = load_config(config)
+    if mode == "full":
+        auto_load_all(cfg)
+    else:
+        auto_incremental_all(cfg)
 
 
 if __name__ == "__main__":
