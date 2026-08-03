@@ -9,6 +9,28 @@ from dataclasses import dataclass
 from .config import OracleConfig
 from .type_map import map_oracle_type
 
+# Oracle type codes for LOB columns
+_LOB_TYPES = {oracledb.DB_TYPE_BLOB, oracledb.DB_TYPE_CLOB, oracledb.DB_TYPE_NCLOB}
+
+
+def _decode_row(row: tuple, lob_indices: set[int]) -> tuple:
+    """Decode BLOB/CLOB columns to strings. Assumes text content < 16MB."""
+    if not lob_indices:
+        return row
+    decoded = list(row)
+    for i in lob_indices:
+        val = decoded[i]
+        if val is None:
+            continue
+        if hasattr(val, 'read'):
+            # LOB object — read full content
+            val = val.read()
+        if isinstance(val, bytes):
+            decoded[i] = val.decode('utf-8', errors='replace')
+        elif isinstance(val, str):
+            decoded[i] = val
+    return tuple(decoded)
+
 
 @dataclass
 class ColumnInfo:
@@ -106,7 +128,7 @@ class OracleClient:
 
     def extract_full(self, schema: str, table: str, output_dir: Path,
                      batch_size: int = 500_000, compression: str = "snappy") -> list[Path]:
-        """Extract full table to Parquet files in batches."""
+        """Extract full table to Parquet files in batches. BLOB/CLOB decoded to text."""
         output_dir.mkdir(parents=True, exist_ok=True)
         files = []
 
@@ -115,11 +137,21 @@ class OracleClient:
             cur.execute(f'SELECT * FROM "{schema}"."{table}"')
             columns = [desc[0] for desc in cur.description]
 
+            # Identify LOB columns for decoding
+            lob_indices = {
+                i for i, desc in enumerate(cur.description)
+                if desc[1] in _LOB_TYPES
+            }
+
             batch_num = 0
             while True:
                 rows = cur.fetchmany(batch_size)
                 if not rows:
                     break
+
+                # Decode BLOB/CLOB to text strings
+                if lob_indices:
+                    rows = [_decode_row(r, lob_indices) for r in rows]
 
                 # Build PyArrow table
                 data = {col: [row[i] for row in rows] for i, col in enumerate(columns)}
