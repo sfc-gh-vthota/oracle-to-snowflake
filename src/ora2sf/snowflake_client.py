@@ -3,7 +3,9 @@ from __future__ import annotations
 """Snowflake client — connection, staging, loading, and MERGE operations."""
 
 import snowflake.connector
+from snowflake.connector.pandas_tools import write_pandas
 from pathlib import Path
+import pandas as pd
 
 from .config import SnowflakeConfig
 
@@ -156,3 +158,98 @@ class SnowflakeClient:
         if stage_path:
             target = f"{target}/{stage_path}"
         self.execute_ddl(f"REMOVE '{target}'")
+
+    # ─── Streaming Methods (no local disk) ───────────────────────────────
+
+    def stream_load(self, table: str, df: pd.DataFrame, chunk_size: int = 100_000) -> int:
+        """Stream a DataFrame directly into Snowflake using write_pandas.
+        
+        No local Parquet files, no PUT, no COPY INTO — writes directly via
+        the Snowflake connector's internal chunked Parquet upload.
+        
+        Args:
+            table: Target table name (must already exist)
+            df: pandas DataFrame with column names matching the target
+            chunk_size: Rows per upload chunk (default 100K)
+        
+        Returns:
+            Total rows loaded
+        """
+        if df.empty:
+            return 0
+
+        success, num_chunks, num_rows, _ = write_pandas(
+            conn=self._conn,
+            df=df,
+            table_name=table,
+            database=self.config.database,
+            schema=self.config.schema,
+            chunk_size=chunk_size,
+            auto_create_table=False,
+            overwrite=False,
+        )
+        if not success:
+            raise RuntimeError(f"write_pandas failed for {table}")
+        return num_rows
+
+    def stream_replace(self, table: str, df: pd.DataFrame, chunk_size: int = 100_000) -> int:
+        """Truncate + stream load (full refresh without disk)."""
+        self.execute_ddl(f"TRUNCATE TABLE IF EXISTS {table}")
+        return self.stream_load(table, df, chunk_size)
+
+    def stream_merge(self, table: str, df: pd.DataFrame, primary_keys: list[str]) -> int:
+        """Stream a delta DataFrame and MERGE into target table.
+        
+        Loads delta into a temp table via write_pandas, then executes MERGE.
+        No local files written to disk.
+        """
+        if df.empty:
+            return 0
+
+        temp_table = f"{table}_DELTA_TMP"
+
+        # Create temp table with same schema
+        self.execute_ddl(f"CREATE OR REPLACE TEMPORARY TABLE {temp_table} LIKE {table}")
+
+        # Stream delta into temp
+        write_pandas(
+            conn=self._conn,
+            df=df,
+            table_name=temp_table,
+            database=self.config.database,
+            schema=self.config.schema,
+            auto_create_table=False,
+            overwrite=True,
+        )
+
+        # Build MERGE
+        cur = self._conn.cursor()
+        try:
+            cur.execute(f"DESCRIBE TABLE {table}")
+            columns = [row[0] for row in cur.fetchall()]
+        finally:
+            cur.close()
+
+        pk_join = " AND ".join(f"t.{pk} = s.{pk}" for pk in primary_keys)
+        update_cols = [c for c in columns if c not in primary_keys]
+        update_set = ", ".join(f"t.{c} = s.{c}" for c in update_cols)
+        insert_cols = ", ".join(columns)
+        insert_vals = ", ".join(f"s.{c}" for c in columns)
+
+        merge_sql = f"""
+            MERGE INTO {table} AS t
+            USING {temp_table} AS s
+            ON {pk_join}
+            WHEN MATCHED THEN UPDATE SET {update_set}
+            WHEN NOT MATCHED THEN INSERT ({insert_cols}) VALUES ({insert_vals})
+        """
+
+        cur = self._conn.cursor()
+        try:
+            cur.execute(merge_sql)
+            rows = cur.rowcount
+        finally:
+            cur.close()
+
+        self.execute_ddl(f"DROP TABLE IF EXISTS {temp_table}")
+        return rows

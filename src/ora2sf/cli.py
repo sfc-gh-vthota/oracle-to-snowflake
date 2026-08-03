@@ -13,6 +13,7 @@ from .snowflake_client import SnowflakeClient
 from .schema_converter import generate_schema_ddl
 from .full_load import full_load_all
 from .incremental import incremental_all
+from .streaming_load import stream_full_all, stream_incremental_all
 from .checkpoint import Checkpoint
 
 console = Console()
@@ -144,6 +145,28 @@ def status(config):
     summary = checkpoint.summary()
     console.print(f"\n[bold]Summary:[/] {summary['completed']} completed, "
                   f"{summary['failed']} failed, {summary['in_progress']} in progress")
+
+
+@cli.command("stream-full")
+@click.option("--config", "-c", required=True, type=click.Path(exists=True), help="Path to config YAML")
+@click.option("--table", "-t", default=None, help="Specific table (default: all)")
+def stream_full(config, table):
+    """Full load via streaming (Oracle → DataFrame → Snowflake, no disk I/O)."""
+    cfg = load_config(config)
+    if table:
+        cfg.tables = [t for t in cfg.tables if t.source_table.upper() == table.upper()]
+    stream_full_all(cfg)
+
+
+@cli.command("stream-incremental")
+@click.option("--config", "-c", required=True, type=click.Path(exists=True), help="Path to config YAML")
+@click.option("--table", "-t", default=None, help="Specific table (default: all CDC-enabled)")
+def stream_incr(config, table):
+    """Incremental sync via streaming (Oracle → DataFrame → MERGE, no disk I/O)."""
+    cfg = load_config(config)
+    if table:
+        cfg.tables = [t for t in cfg.tables if t.source_table.upper() == table.upper()]
+    stream_incremental_all(cfg)
 
 
 if __name__ == "__main__":

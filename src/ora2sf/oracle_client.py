@@ -5,6 +5,7 @@ from __future__ import annotations
 import oracledb
 import pyarrow as pa
 import pyarrow.parquet as pq
+import pandas as pd
 from pathlib import Path
 from dataclasses import dataclass
 
@@ -166,6 +167,55 @@ class OracleClient:
                 batch_num += 1
 
         return files
+
+    # ─── Streaming Methods (yield DataFrames, no disk writes) ─────────
+
+    def stream_full(self, schema: str, table: str, batch_size: int = 500_000):
+        """Generator: yields pandas DataFrames from a full table scan.
+        
+        No files written to disk. Each yield is one batch of rows
+        ready to be passed directly to SnowflakeClient.stream_load().
+        """
+        with self.conn.cursor() as cur:
+            cur.arraysize = batch_size
+            cur.execute(f'SELECT * FROM "{schema}"."{table}"')
+            columns = [desc[0] for desc in cur.description]
+            lob_indices = {
+                i for i, desc in enumerate(cur.description)
+                if desc[1] in _LOB_TYPES
+            }
+
+            while True:
+                rows = cur.fetchmany(batch_size)
+                if not rows:
+                    break
+                if lob_indices:
+                    rows = [_decode_row(r, lob_indices) for r in rows]
+                yield pd.DataFrame(rows, columns=columns)
+
+    def stream_incremental_timestamp(self, schema: str, table: str,
+                                      cdc_column: str, since: str,
+                                      batch_size: int = 500_000):
+        """Generator: yields DataFrames of rows changed since a timestamp."""
+        with self.conn.cursor() as cur:
+            cur.arraysize = batch_size
+            cur.execute(
+                f'SELECT * FROM "{schema}"."{table}" WHERE "{cdc_column}" > TO_TIMESTAMP(:since, \'YYYY-MM-DD HH24:MI:SS\')',
+                {"since": since}
+            )
+            columns = [desc[0] for desc in cur.description]
+            lob_indices = {
+                i for i, desc in enumerate(cur.description)
+                if desc[1] in _LOB_TYPES
+            }
+
+            while True:
+                rows = cur.fetchmany(batch_size)
+                if not rows:
+                    break
+                if lob_indices:
+                    rows = [_decode_row(r, lob_indices) for r in rows]
+                yield pd.DataFrame(rows, columns=columns)
 
     def extract_incremental_scn(self, schema: str, table: str, from_scn: int,
                                  to_scn: int, output_dir: Path,
