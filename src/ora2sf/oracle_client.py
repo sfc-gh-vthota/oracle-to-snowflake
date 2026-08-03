@@ -186,12 +186,19 @@ class OracleClient:
             """, {"from_scn": from_scn, "to_scn": to_scn})
 
             columns = [desc[0] for desc in cur.description]
+            lob_indices = {
+                i for i, desc in enumerate(cur.description)
+                if desc[1] in _LOB_TYPES
+            }
             batch_num = 0
 
             while True:
                 rows = cur.fetchmany(batch_size)
                 if not rows:
                     break
+
+                if lob_indices:
+                    rows = [_decode_row(r, lob_indices) for r in rows]
 
                 data = {col: [row[i] for row in rows] for i, col in enumerate(columns)}
                 arrow_table = pa.table(data)
@@ -218,12 +225,19 @@ class OracleClient:
                 {"since": since}
             )
             columns = [desc[0] for desc in cur.description]
+            lob_indices = {
+                i for i, desc in enumerate(cur.description)
+                if desc[1] in _LOB_TYPES
+            }
             batch_num = 0
 
             while True:
                 rows = cur.fetchmany(batch_size)
                 if not rows:
                     break
+
+                if lob_indices:
+                    rows = [_decode_row(r, lob_indices) for r in rows]
 
                 data = {col: [row[i] for row in rows] for i, col in enumerate(columns)}
                 arrow_table = pa.table(data)
