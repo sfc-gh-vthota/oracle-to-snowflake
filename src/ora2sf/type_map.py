@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Oracle type to Snowflake type mapping."""
 
 from pathlib import Path
@@ -41,7 +43,7 @@ def _default_map() -> dict[str, str]:
         "TIMESTAMP": "TIMESTAMP_NTZ",
         "TIMESTAMP WITH TIME ZONE": "TIMESTAMP_TZ",
         "TIMESTAMP WITH LOCAL TIME ZONE": "TIMESTAMP_LTZ",
-        "BLOB": "BINARY",
+        "BLOB": "VARCHAR(16777216)",
         "RAW": "BINARY",
         "LONG RAW": "BINARY",
         "ROWID": "VARCHAR(18)",

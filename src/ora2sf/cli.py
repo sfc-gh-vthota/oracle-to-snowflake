@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """CLI interface for Oracle to Snowflake ingestion utility."""
 
 import click

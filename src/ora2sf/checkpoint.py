@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Checkpoint tracking for resume capability."""
 
 import json

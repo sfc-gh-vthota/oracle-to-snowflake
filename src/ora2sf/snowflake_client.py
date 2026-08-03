@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Snowflake client — connection, staging, loading, and MERGE operations."""
 
 import snowflake.connector

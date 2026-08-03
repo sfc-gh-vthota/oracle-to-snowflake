@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Oracle database client — connection, schema introspection, data extraction."""
 
 import oracledb
@@ -86,8 +88,8 @@ class OracleClient:
         """List all tables in a schema."""
         with self.conn.cursor() as cur:
             cur.execute(
-                "SELECT table_name FROM all_tables WHERE owner = :schema ORDER BY table_name",
-                {"schema": schema.upper()}
+                "SELECT table_name FROM all_tables WHERE owner = :s ORDER BY table_name",
+                {"s": schema.upper()}
             )
             return [row[0] for row in cur.fetchall()]
 
@@ -97,9 +99,9 @@ class OracleClient:
             cur.execute("""
                 SELECT column_name, data_type, data_length, data_precision, data_scale, nullable
                 FROM all_tab_columns
-                WHERE owner = :schema AND table_name = :table
+                WHERE owner = :s AND table_name = :t
                 ORDER BY column_id
-            """, {"schema": schema.upper(), "table": table.upper()})
+            """, {"s": schema.upper(), "t": table.upper()})
             return [
                 ColumnInfo(
                     column_name=row[0],

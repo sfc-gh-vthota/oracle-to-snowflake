@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Full load — extract entire table from Oracle and load into Snowflake."""
 
 import tempfile

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Schema converter — generates Snowflake DDL from Oracle metadata."""
 
 from .oracle_client import OracleClient, ColumnInfo
@@ -53,9 +55,9 @@ def get_primary_keys(oracle_client: OracleClient, schema: str, table: str) -> li
             FROM all_constraints cons
             JOIN all_cons_columns cols ON cons.constraint_name = cols.constraint_name
                 AND cons.owner = cols.owner
-            WHERE cons.owner = :schema
-              AND cons.table_name = :table
+            WHERE cons.owner = :s
+              AND cons.table_name = :t
               AND cons.constraint_type = 'P'
             ORDER BY cols.position
-        """, {"schema": schema.upper(), "table": table.upper()})
+        """, {"s": schema.upper(), "t": table.upper()})
         return [row[0] for row in cur.fetchall()]

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Incremental CDC — extract changes from Oracle and merge into Snowflake."""
 
 import tempfile
