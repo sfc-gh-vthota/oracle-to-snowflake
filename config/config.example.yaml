@@ -1,0 +1,40 @@
+# Oracle to Snowflake Ingestion — Configuration
+# Copy this file to config.yaml and fill in your values
+
+oracle:
+  host: oracle-host.example.com
+  port: 1521
+  service_name: ORCL
+  user: ${ORACLE_USER}
+  password: ${ORACLE_PASSWORD}
+
+snowflake:
+  account: myaccount
+  user: ${SNOWFLAKE_USER}
+  password: ${SNOWFLAKE_PASSWORD}
+  role: SYSADMIN
+  database: TARGET_DB
+  schema: RAW_ORACLE
+  warehouse: WH_ETL_M
+  stage: ORA_STAGE  # internal stage name (will be created if missing)
+
+tables:
+  # Each entry defines one table to sync
+  - source_schema: HR
+    source_table: EMPLOYEES
+    target_table: EMPLOYEES
+    cdc_method: scn          # scn | timestamp | full_only
+    cdc_column: null         # required for 'timestamp' method
+    parallel_chunks: 4       # number of parallel read threads
+
+  - source_schema: HR
+    source_table: DEPARTMENTS
+    target_table: DEPARTMENTS
+    cdc_method: full_only
+
+settings:
+  batch_size: 500000         # rows per Parquet file chunk
+  max_parallel: 4            # concurrent table extractions
+  parquet_compression: snappy
+  checkpoint_file: .ora2sf_checkpoint.json
+  log_level: INFO

@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+.env
+*.parquet
+.ora2sf_checkpoint.json
+config/config.yaml
